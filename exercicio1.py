@@ -1,132 +1,98 @@
-class No:
-    def __init__(self, chave, signi):
-        self.chave = chave
-        self.signi = signi
-        self.esq = None
-        self.dir = None
-        
-class Dicionario:
+import time
+import random
+
+class MinHeap:
     def __init__(self):
-        self.raiz = None
-        self.tamanho = 0 
-        
-    # Inserir verbetes e seus significados 
-    def inserir(self, chave, signi):
-        if self.raiz is None:
-            self.raiz = No(chave, signi)
-            self.tamanho += 1
-        else:
-            self._inserir_recursivo(self.raiz, chave, signi)
-            
-    def _inserir_recursivo(self, no_atual, chave, signi):
-        if chave < no_atual.chave:
-            if no_atual.esq is None:
-                no_atual.esq = No(chave, signi)
-                self.tamanho += 1
+        self.h = []
+        self.c = 0
+
+    def push(self, prio, pid, proc):
+        self.c += 1
+        self.h.append([prio, self.c, pid, proc])
+        self.subir(len(self.h) - 1)
+
+    def pop(self):
+        if not self.h: return None
+        self.h[0], self.h[-1] = self.h[-1], self.h[0]
+        x = self.h.pop()
+        if self.h: self.descer(0)
+        return x[2], x[3]
+
+    def subir(self, i):
+        p = (i - 1) // 2
+        while i > 0 and self.h[i][0] < self.h[p][0]:
+            self.h[i], self.h[p] = self.h[p], self.h[i]
+            i, p = p, (p - 1) // 2
+
+    def descer(self, i):
+        n = len(self.h)
+        while True:
+            e, d, m = 2*i + 1, 2*i + 2, i
+            if e < n and self.h[e][0] < self.h[m][0]: m = e
+            if d < n and self.h[d][0] < self.h[m][0]: m = d
+            if m == i: break
+            self.h[i], self.h[m] = self.h[m], self.h[i]
+            i = m
+
+def main():
+    pronta = MinHeap()
+    susp = MinHeap()
+    q = 5 # Quantum
+    t = 0 # Tempo global
+
+    print(f"{'T':<4} | {'PID':<4} | {'ESTADO':<22} | {'BURST':<5} | {'MOTIVO'}")
+    print("-" * 65)
+
+    # Cria 10 processos (Nova -> Pronta)
+    # Burst entre 16 e 25 garante pelo menos 4 idas na CPU (Quantum 5)
+    for i in range(1, 11):
+        burst = random.randint(16, 25)
+        pronta.push(burst, f"P{i}", {"burst": burst, "wake": 0})
+        print(f"{0:<4} | P{i:<3} | Nova -> Pronta         | {burst:<5} | Criado")
+
+    while pronta.h or susp.h:
+        # Acorda quem estava na fila Suspensa esperando I/O
+        temp = []
+        while susp.h:
+            pid, p = susp.pop()
+            if p["wake"] <= t:
+                print(f"{t:<4} | {pid:<3} | Suspensa -> Pronta     | {p['burst']:<5} | Dado recebido")
+                pronta.push(p["burst"], pid, p)
             else:
-                self._inserir_recursivo(no_atual.esq, chave, signi)
-        elif chave > no_atual.chave:
-            if no_atual.dir is None:
-                no_atual.dir = No(chave, signi)
-                self.tamanho += 1
-            else:
-                self._inserir_recursivo(no_atual.dir, chave, signi)
-        else:
-            no_atual.signi = signi # Caso a palavra exista ela sera atualizada
+                temp.append((pid, p))
+                
+        for pid, p in temp:
+            susp.push(p["wake"], pid, p)
 
-    # Buscar verbetes
-    def buscar(self, chave):
-        no = self._buscar_recursivo(self.raiz, chave)
-        if no:
-            return f"{no.chave}: {no.signi}"
-        return "Palavra não encontrada."
-    
-    def _buscar_recursivo(self, no_atual, chave):
-        if no_atual is None:
-            return None
-        if chave == no_atual.chave:
-            return no_atual
-        elif chave < no_atual.chave:
-            return self._buscar_recursivo(no_atual.esq, chave)
-        else:
-            return self._buscar_recursivo(no_atual.dir, chave)
+        # CPU Ociosa
+        if not pronta.h:
+            t += 1
+            time.sleep(0.01)
+            continue
 
-    # c. Listar palavras contidas no dicionário
-    def listar(self):
-        self._listar_recursivo(self.raiz) 
+        # Pronta -> Executando
+        pid, p = pronta.pop()
+        print(f"{t:<4} | {pid:<3} | Pronta -> Executando   | {p['burst']:<5} | Assumiu CPU")
+
+        # Temporiza a execução na CPU
+        exec_t = min(q, p["burst"])
+        for _ in range(exec_t):
+            time.sleep(0.05) # Delay simulando processamento
+            t += 1
         
-    def _listar_recursivo(self, no_atual):
-        if no_atual is not None:
-            self._listar_recursivo(no_atual.esq)
-            print(f"- {no_atual.chave}: {no_atual.signi}")
-            self._listar_recursivo(no_atual.dir)
+        p["burst"] -= exec_t
 
-    # Remover verbetes
-    def remover(self, chave):
-        if self.buscar(chave) != "Palavra não encontrada.":
-            self.raiz = self._remover_recursivo(self.raiz, chave)
-            self.tamanho -= 1
-            
-    def _remover_recursivo(self, no_atual, chave):
-        if no_atual is None:
-            return no_atual
-        if chave < no_atual.chave:
-            no_atual.esq = self._remover_recursivo(no_atual.esq, chave)
-        elif chave > no_atual.chave:
-            no_atual.dir = self._remover_recursivo(no_atual.dir, chave)
+        # Saída da Execução
+        if p["burst"] <= 0:
+            print(f"{t:<4} | {pid:<3} | Executando -> Terminada| 0     | Encerrado")
         else:
-            if no_atual.esq is None: return no_atual.dir
-            elif no_atual.dir is None: return no_atual.esq
-            temp = self._minimo(no_atual.dir)
-            no_atual.chave, no_atual.signi = temp.chave, temp.signi
-            no_atual.dir = self._remover_recursivo(no_atual.dir, temp.chave)
-        return no_atual
-    
-    def _minimo(self, no_atual):
-        while no_atual.esq is not None: no_atual = no_atual.esq
-        return no_atual
+            if random.random() < 0.3: # 30% de chance de pedir um I/O
+                p["wake"] = t + random.randint(2, 6) # Fica bloqueado alguns ciclos
+                print(f"{t:<4} | {pid:<3} | Executando -> Suspensa | {p['burst']:<5} | I/O pendente")
+                susp.push(p["wake"], pid, p)
+            else:
+                print(f"{t:<4} | {pid:<3} | Executando -> Pronta   | {p['burst']:<5} | Fim Quantum")
+                pronta.push(p["burst"], pid, p)
 
-    # Altura da árvore
-    def altura(self):
-        return self._altura_recursiva(self.raiz)
-    
-    def _altura_recursiva(self, no_atual):
-        if no_atual is None: return 0
-        return 1 + max(self._altura_recursiva(no_atual.esq), self._altura_recursiva(no_atual.dir))
-
-    # Número de itens
-    def numero_itens(self):
-        return self.tamanho
-
-    # --- BALANCEAMENTO ---
-    def balancear_arvore(self):
-        nos = []
-        self._guardar_nos_em_ordem(self.raiz, nos)
-        self.raiz = self._construir_balanceada(nos, 0, len(nos) - 1)
-
-    def _guardar_nos_em_ordem(self, no_atual, nos):
-        if no_atual is not None:
-            self._guardar_nos_em_ordem(no_atual.esq, nos)
-            nos.append(no_atual)
-            self._guardar_nos_em_ordem(no_atual.dir, nos)
-
-    def _construir_balanceada(self, nos, inicio, fim):
-        if inicio > fim: return None
-        meio = (inicio + fim) // 2
-        no = nos[meio]
-        no.esq = self._construir_balanceada(nos, inicio, meio - 1)
-        no.dir = self._construir_balanceada(nos, meio + 1, fim)
-        return no
-
-# TESTE
-dicionario = Dicionario()
-dicionario.inserir("Python", "Linguagem de programação")
-dicionario.inserir("Algoritmo", "Passos para resolver um problema")
-dicionario.inserir("Erro", "Erro no código")
-
-dicionario.balancear_arvore() 
-
-print("Lista:")
-dicionario.listar()
-print(f"Altura: {dicionario.altura()}")
-print(f"Itens: {dicionario.numero_itens()}")
+if __name__ == "__main__":
+    main()
